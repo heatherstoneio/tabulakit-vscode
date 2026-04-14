@@ -4,6 +4,12 @@
   "description": "Documentation site builder companion — live preview, guided setup, and action controls for TabulaKit projects",
   "version": "0.1.0",
   "publisher": "heatherstone",
+  "icon": "media/icon.png",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/heatherstoneio/tabulakit-vscode"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
