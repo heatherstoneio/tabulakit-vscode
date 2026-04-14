@@ -3,7 +3,7 @@
   "displayName": "TabulaKit",
   "description": "Documentation site builder companion — live preview, guided setup, and action controls for TabulaKit projects",
   "version": "0.1.0",
-  "publisher": "heatherstone",
+  "publisher": "heatherstoneio",
   "icon": "media/icon.png",
   "license": "MIT",
   "repository": {
