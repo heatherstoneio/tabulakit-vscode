@@ -442,8 +442,8 @@ function getDashboardHtml(config: SiteConfig, state: ProjectState, port: number)
     .preview-frame { border: none; background: #222; position: absolute; top: 0; left: 0; transform-origin: 0 0; }
     .preview-placeholder { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; color: #888; }
     .preview-placeholder h2 { color: ${color}; font-size: 18px; }
-    .preview-bar { display: flex; align-items: center; gap: 8px; padding: 6px 12px; background: #252526; border-bottom: 1px solid #3a3a3a; flex-shrink: 0; }
-    .preview-bar input { flex: 1; background: #3a3a3a; border: 1px solid #555; color: #ddd; padding: 4px 8px; border-radius: 3px; font-size: 12px; }
+    .preview-bar { display: flex; align-items: center; gap: 4px; padding: 6px 12px; background: #252526; border-bottom: 1px solid #3a3a3a; flex-shrink: 0; }
+    .preview-bar .breadcrumb { flex: 1; color: #888; font-family: ui-monospace, 'SF Mono', Consolas, monospace; font-size: 12px; padding: 4px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .preview-bar button { background: none; border: none; color: #888; cursor: pointer; font-size: 14px; padding: 4px 8px; }
     .preview-bar button:hover { color: #ddd; }
     .zoom-controls { display: flex; align-items: center; gap: 2px; margin-left: 4px; border-left: 1px solid #555; padding-left: 8px; }
@@ -484,9 +484,10 @@ function getDashboardHtml(config: SiteConfig, state: ProjectState, port: number)
   <div class="tab-content">
     <div id="tab-preview" class="tab-pane active">
       <div class="preview-bar">
-        <input type="text" id="preview-url" value="http://localhost:${port}" />
+        <button onclick="goBack()" title="Back">&#x2190;</button>
+        <button onclick="goForward()" title="Forward">&#x2192;</button>
         <button onclick="refreshPreview()" title="Refresh">&#x21bb;</button>
-        <button onclick="startServer()" title="Start server">&#x25b6;</button>
+        <span id="preview-breadcrumb" class="breadcrumb">/</span>
         <div class="zoom-controls">
           <button onclick="zoomOut()" title="Zoom out">&#x2212;</button>
           <span id="zoom-level">75%</span>
@@ -500,7 +501,7 @@ function getDashboardHtml(config: SiteConfig, state: ProjectState, port: number)
       <div id="preview-placeholder" class="preview-placeholder" style="display:none">
         <h2>Site Preview</h2>
         <p>The local preview server isn't running yet.</p>
-        <button class="btn btn-primary" onclick="startServer()">&#x25b6; Start Preview</button>
+        <button class="btn btn-primary" onclick="vscode.postMessage({command:'startServer'})">&#x25b6; Start Preview</button>
       </div>
     </div>
 
@@ -592,8 +593,29 @@ function getDashboardHtml(config: SiteConfig, state: ProjectState, port: number)
     const vscode = acquireVsCodeApi();
     const iframe = document.getElementById('preview-iframe');
     const placeholder = document.getElementById('preview-placeholder');
-    const urlInput = document.getElementById('preview-url');
+    const breadcrumb = document.getElementById('preview-breadcrumb');
     const zoomLabel = document.getElementById('zoom-level');
+
+    // Cross-origin reality: the iframe loads http://localhost:<port> while
+    // this script runs in the vscode-webview:// origin. We can't read
+    // iframe.contentWindow.location.href or call its history methods. The
+    // framework's host bridge (added in tabulakit PR #13) accepts
+    // {type:'tabulakit:nav'} commands and emits {type:'tabulakit:route'}
+    // messages — we use those to drive back / forward / refresh and to
+    // populate the breadcrumb. Site framework versions older than that PR
+    // simply ignore the messages, so the buttons no-op and breadcrumb
+    // stays at its default — graceful degradation.
+    const baseUrl = 'http://localhost:${port}';
+    let currentRoute = '/';
+
+    function formatRoute(hash) {
+      if (!hash || hash === '#' || hash === '#/') return '/';
+      return hash.replace(/^#/, '');
+    }
+
+    function buildUrl() {
+      return currentRoute === '/' ? baseUrl : baseUrl + '/#' + currentRoute;
+    }
 
     let zoomLevel = 0.75;
     function applyZoom() {
@@ -616,17 +638,34 @@ function getDashboardHtml(config: SiteConfig, state: ProjectState, port: number)
       });
     });
 
-    function refreshPreview() { iframe.src = urlInput.value; }
-    function startServer() { vscode.postMessage({ command: 'startServer' }); }
+    function postNav(action) {
+      try { iframe.contentWindow.postMessage({ type: 'tabulakit:nav', action: action }, '*'); } catch (e) {}
+    }
+    function goBack() { postNav('back'); }
+    function goForward() { postNav('forward'); }
+    function refreshPreview() {
+      // Tell the framework to reload in place (preserves route on updated
+      // sites). For older sites that don't honor the bridge, set src as
+      // well so refresh still does something — currentRoute stays at '/'
+      // for those, so this matches the pre-bridge behavior of resetting
+      // to base URL.
+      postNav('reload');
+      iframe.src = buildUrl();
+    }
 
     window.addEventListener('message', event => {
       const msg = event.data;
-      if (msg.command === 'refreshPreview') refreshPreview();
-      else if (msg.command === 'serverStarted') {
+      if (!msg) return;
+      if (msg.type === 'tabulakit:route') {
+        currentRoute = formatRoute(msg.path);
+        breadcrumb.textContent = currentRoute;
+      } else if (msg.command === 'refreshPreview') {
+        refreshPreview();
+      } else if (msg.command === 'serverStarted') {
         setTimeout(() => {
           iframe.style.display = '';
           placeholder.style.display = 'none';
-          iframe.src = urlInput.value;
+          iframe.src = buildUrl();
         }, 1000);
       }
     });
